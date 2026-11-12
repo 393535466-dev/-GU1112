@@ -47,6 +47,8 @@ def export(api_root: str, output: Path) -> None:
             public_pick = {field: pick[field] for field in PICK_FIELDS}
             if "score_detail" in pick:
                 public_pick["score_detail"] = pick["score_detail"]
+            if "advice" in pick:
+                public_pick["advice"] = pick["advice"]
             published["candidates"].append(public_pick)
         runs[key] = {"result": published}
     if not runs:

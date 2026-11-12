@@ -101,8 +101,8 @@ function renderResult(run) {
       row.querySelector('.' + name).textContent = value;
     }
     const ask = row.querySelector('.ask-stock');
-    ask.setAttribute('aria-label', '问这只：' + pick.name);
-    ask.addEventListener('click', () => openAssistant(`${pick.name}（${pick.code}）为什么入选？`));
+    ask.setAttribute('aria-label', '查看建议：' + pick.name);
+    ask.addEventListener('click', () => openAssistant(pick.code));
     candidates.append(row);
   }
   note.hidden = !picks.length;

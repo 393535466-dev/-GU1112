@@ -34,7 +34,7 @@
       <section class="results" id="results" aria-labelledby="result-title">
         <div class="section-heading result-heading">
           <h2 id="result-title" tabindex="-1">候选名单</h2>
-          <button id="open-assistant" class="assistant-trigger" type="button" aria-haspopup="dialog">问选股助手</button>
+          <button id="open-assistant" class="assistant-trigger advice-trigger" type="button" aria-haspopup="dialog">AI 建议</button>
         </div>
         <p id="result-meta"></p>
         <p id="status" class="status" role="status">正在加载选股方向…</p>
@@ -46,24 +46,57 @@
     <dialog id="assistant" aria-labelledby="assistant-title">
       <header class="assistant-header">
         <div>
-          <h2 id="assistant-title" tabindex="-1">选股助手</h2>
+          <h2 id="assistant-title" tabindex="-1">AI 建议</h2>
           <p id="assistant-context"></p>
         </div>
         <button id="close-assistant" class="assistant-trigger" type="button">关闭</button>
       </header>
+      <div class="assistant-views" role="group" aria-label="查看方式">
+        <button type="button" data-assistant-view="advice" aria-pressed="true">建议</button>
+        <button type="button" data-assistant-view="qa" aria-pressed="false">问答</button>
+      </div>
       <div class="assistant-body">
-        <div class="assistant-suggestions" aria-label="常见问题">
-          <button type="button">为什么分数偏低？</button>
-          <button type="button">评分怎么算？</button>
-          <button type="button">候选适合观察多久？</button>
+        <div id="advice-panel">
+          <p id="advice-empty" class="status" hidden></p>
+          <div id="advice-content" hidden>
+            <div class="advice-stock-picker">
+              <label for="advice-stock">候选股票</label>
+              <select id="advice-stock"></select>
+            </div>
+            <div class="advice-summary">
+              <div class="advice-summary-heading"><h3 id="advice-stance"></h3><span id="advice-origin"></span></div>
+              <p id="advice-summary"></p>
+            </div>
+            <dl class="advice-facts">
+              <div><dt>空仓时</dt><dd id="advice-unheld"></dd></div>
+              <div><dt>持有时</dt><dd id="advice-held"></dd></div>
+              <div><dt>主要风险</dt><dd id="advice-risk"></dd></div>
+              <div><dt>预计持仓</dt><dd id="advice-holding"></dd></div>
+              <div><dt>复查条件</dt><dd id="advice-review"></dd></div>
+            </dl>
+            <details id="advice-technical">
+              <summary>关键价位与量价</summary>
+              <dl id="advice-levels" class="advice-levels"></dl>
+              <p id="advice-bar-source" class="advice-data-note"></p>
+            </details>
+            <p class="advice-data-note">建议依据行情和技术指标整理。新闻、公告、筹码与主力资金暂未纳入。</p>
+          </div>
         </div>
-        <div id="assistant-reply" role="status" aria-live="polite" aria-atomic="true">
-          <p id="assistant-asked"></p>
-          <p id="assistant-answer">可以问候选为什么入选、分数怎么来的，或什么时候重新评估。</p>
-          <p id="assistant-source"></p>
+        <div id="assistant-qa" hidden>
+          <div class="assistant-suggestions" aria-label="常见问题">
+            <button id="assistant-stock-question" type="button">这只为什么入选？</button>
+            <button type="button">为什么分数偏低？</button>
+            <button type="button">评分怎么算？</button>
+            <button type="button">候选适合观察多久？</button>
+          </div>
+          <div id="assistant-reply" role="status" aria-live="polite" aria-atomic="true">
+            <p id="assistant-asked"></p>
+            <p id="assistant-answer">可以问候选为什么入选、分数怎么来的，或什么时候重新评估。</p>
+            <p id="assistant-source"></p>
+          </div>
         </div>
       </div>
-      <form id="assistant-form" class="assistant-form">
+      <form id="assistant-form" class="assistant-form" hidden>
         <label for="assistant-question">你的问题</label>
         <div class="assistant-compose">
           <input id="assistant-question" type="text" required maxlength="320" placeholder="例如：这轮有没有 80 分以上的？" autocomplete="off">
@@ -102,7 +135,7 @@
             <summary>什么时候重新评估</summary>
             <p class="review"></p>
           </details>
-          <button class="ask-stock assistant-trigger" type="button" aria-haspopup="dialog">问这只</button>
+          <button class="ask-stock assistant-trigger" type="button" aria-haspopup="dialog">查看建议</button>
         </article>
       </li>
     </template>

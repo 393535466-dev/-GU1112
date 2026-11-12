@@ -11,6 +11,7 @@ import pandas as pd
 import requests
 import yaml
 
+from .advice import candidate_advice
 from .engine.daily import enrich_daily_features
 from .engine.filter import apply_hard_filters, requires_daily_features, without_daily_filters
 from .engine.models import HardFilterConfig, Pick, ScreeningConfig
@@ -18,6 +19,7 @@ from .engine.normalize import safe_float, safe_text
 from .engine.risk import apply_portfolio_overlay, apply_risk_overlay
 from .engine.scorer import compute_screen_scores, factor_score_columns, normalized_factor_weights
 from .engine.snapshot import fetch_snapshot_with_fallback
+from .engine.trading_calendar import get_effective_trading_date
 
 logger = logging.getLogger(__name__)
 STRATEGY_DIR = Path(__file__).parent / "engine" / "strategies"
@@ -191,8 +193,8 @@ def _explain(pick: Pick, row: dict, style: Direction, weights: dict[str, float])
     }
 
 
-def _add_model_explanations(candidates: list[dict], api_key: str, model: str) -> bool:
-    facts = [{key: candidate[key] for key in ("code", "reason")} for candidate in candidates]
+def _add_model_advice(candidates: list[dict], style: Direction, api_key: str, model: str) -> bool:
+    facts = [{key: candidate[key] for key in ("code", "reason", "risk", "review", "advice")} for candidate in candidates]
     try:
         response = requests.post(
             "https://api.deepseek.com/chat/completions",
@@ -201,11 +203,13 @@ def _add_model_explanations(candidates: list[dict], api_key: str, model: str) ->
                 "model": model,
                 "messages": [
                     {"role": "system", "content": (
-                        '把入选理由改写为一句简单中文。只使用提供的事实，不增加新闻、业绩、'
-                        '预测、买卖建议或持仓时间。原样保留所有股票代码。只返回 JSON 对象，格式为 '
-                        '{"explanations":[{"code":"股票代码","reason":"一句话理由"}]}。'
+                        '给每个候选写一句简明中文，说明为什么现在建议这样观察。'
+                        '以 advice 的结论和数据为准，可结合真实入选理由或风险。'
+                        '使用已经提供的事实，保留观望和数据不足的含义。不要添加点位、消息、预测或交易指令。'
+                        '原样保留所有股票代码。只返回 JSON 对象，格式为 '
+                        '{"summaries":[{"code":"股票代码","summary":"一句话建议依据"}]}。'
                     )},
-                    {"role": "user", "content": json.dumps(facts, ensure_ascii=False)},
+                    {"role": "user", "content": json.dumps({"direction": style.title, "picks": facts}, ensure_ascii=False)},
                 ],
                 "thinking": {"type": "disabled"},
                 "response_format": {"type": "json_object"},
@@ -214,18 +218,18 @@ def _add_model_explanations(candidates: list[dict], api_key: str, model: str) ->
             timeout=(5, 20),
         )
         response.raise_for_status()
-        items = json.loads(response.json()["choices"][0]["message"]["content"])["explanations"]
-        explanations = {
-            item["code"]: item["reason"].strip() for item in items
-            if isinstance(item["reason"], str) and 1 <= len(item["reason"].strip()) <= 130
+        items = json.loads(response.json()["choices"][0]["message"]["content"])["summaries"]
+        summaries = {
+            item["code"]: item["summary"].strip() for item in items
+            if isinstance(item["summary"], str) and 1 <= len(item["summary"].strip()) <= 130
         }
-        if len(items) != len(candidates) or set(explanations) != {item["code"] for item in candidates}:
+        if len(items) != len(candidates) or set(summaries) != {item["code"] for item in candidates}:
             return False
     except (requests.RequestException, ValueError, TypeError, KeyError, IndexError) as exc:
-        logger.info("Optional model explanation unavailable (%s)", type(exc).__name__)
+        logger.info("Optional model advice unavailable (%s)", type(exc).__name__)
         return False
     for candidate in candidates:
-        candidate["reason"] = explanations[candidate["code"]]
+        candidate["advice"]["model_summary"] = summaries[candidate["code"]]
     return True
 
 
@@ -298,11 +302,14 @@ def run_screen(
         picks, _ = apply_portfolio_overlay(picks, profile=config.portfolio_profile)
         weights = normalized_factor_weights(config)
         candidates = [_explain(pick, rows[pick.code], style, weights) for pick in picks[:CANDIDATE_LIMIT]]
+        completed_date = get_effective_trading_date("cn", current_time=datetime.now(timezone.utc)).isoformat()
+        for candidate in candidates:
+            candidate["advice"] = candidate_advice(rows[candidate["code"]], completed_date, stale=stale)
 
     ai_used = False
     if api_key and candidates:
-        on_progress("正在整理入选说明")
-        ai_used = _add_model_explanations(candidates, api_key, model)
+        on_progress("正在整理 AI 建议")
+        ai_used = _add_model_advice(candidates, style, api_key, model)
     return {
         "direction": direction,
         "direction_label": style.title,

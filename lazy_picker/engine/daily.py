@@ -24,7 +24,10 @@ from .source_guard import call_with_timeout, parse_source_timeout_seconds
 _DAILY_FEATURE_DEFAULTS = {
     "daily_data_points": pd.NA,
     "change_60d": pd.NA,
+    "daily_trade_date": "",
+    "daily_close": pd.NA,
     "ma5": pd.NA,
+    "ma10": pd.NA,
     "ma20": pd.NA,
     "ma60": pd.NA,
     "ma_bullish": pd.NA,
@@ -991,9 +994,11 @@ def compute_daily_features(hist: pd.DataFrame) -> dict[str, object]:
         raise RuntimeError("daily history has no valid close price")
 
     ma5 = close.rolling(5).mean()
+    ma10 = close.rolling(10).mean()
     ma20 = close.rolling(20).mean()
     ma60 = close.rolling(60).mean()
     last_close = float(close.iloc[-1])
+    last_date = _latest_daily_bar_date(df)
     last_ma5 = _last_float(ma5)
     last_ma20 = _last_float(ma20)
     last_ma60 = _last_float(ma60)
@@ -1021,7 +1026,10 @@ def compute_daily_features(hist: pd.DataFrame) -> dict[str, object]:
     return {
         "daily_data_points": int(len(close)),
         "change_60d": None if change_60d is None else round(float(change_60d), 4),
+        "daily_trade_date": "" if pd.isna(last_date) else last_date.date().isoformat(),
+        "daily_close": last_close,
         "ma5": last_ma5,
+        "ma10": _last_float(ma10),
         "ma20": last_ma20,
         "ma60": last_ma60,
         "ma_bullish": ma_bullish,

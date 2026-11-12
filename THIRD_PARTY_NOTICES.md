@@ -4,4 +4,6 @@ This project adapts selected code from [daily_stock_analysis](https://github.com
 
 The market temperature calculation in `lazy_picker/market.py` adapts DSA's Market Light scoring from `src/market_analyzer.py`.
 
+The observation plans in `lazy_picker/advice.py` adapt DSA's MA5/MA10/MA20 alignment and MA5 bias rules from `src/stock_analyzer.py` and `src/agent/skills/defaults.py`.
+
 The upstream screening files and strategy YAML templates are derived from [AlphaSift](https://github.com/ZhuLinsen/alphasift/tree/9f522747caafd3c0b1ddb7e14d5cf44c8580b6cf), revision `9f522747caafd3c0b1ddb7e14d5cf44c8580b6cf`, under Apache License 2.0. Their original notices and [Apache license](lazy_picker/engine/LICENSE) are included. Python imports in the copied modules have been adapted for this standalone package.

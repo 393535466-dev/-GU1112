@@ -25,6 +25,11 @@ function stockAnswer(question, pick) {
     return `${pick.name}最终 ${pick.score.toFixed(1)} 分，基础分 ${detail.base}，个股风险扣 ${detail.risk_penalty} 分，行业集中度扣 ${detail.portfolio_penalty} 分。\n${factors}。`;
   }
   if (/风险|风险点|稳不稳/.test(question)) return `${pick.name}本轮的风险提示：${pick.risk}`;
+  if (/建议|空仓|已持有|乖离率|关键价位/.test(question) && pick.advice) {
+    const { stance, summary, no_position, has_position, technical } = pick.advice;
+    const levels = technical ? `\n日线参考：MA5 ${technical.ma5} 元、MA10 ${technical.ma10} 元、MA20 ${technical.ma20} 元，收盘相对 MA5 ${technical.bias_ma5_pct}%（${technical.trade_date}）。` : '';
+    return `${pick.name}：${stance}。${summary}\n空仓时：${no_position}\n持有时：${has_position}${levels}`;
+  }
   if (/多久|重新评估|复查|持仓|观察/.test(question)) {
     return `${pick.name}对应策略的预计持仓区间为 ${pick.holding}。${pick.review}`;
   }
@@ -41,9 +46,9 @@ function ruleAnswer(question, rules, context) {
   const codes = question.match(/\b\d{6}\b/g) ?? [];
   const found = picks.filter((pick) => codes.includes(pick.code) || question.includes(pick.name));
   if (codes.some((code) => !picks.some((pick) => pick.code === code))) {
-    return '所问股票代码不在当前候选名单里。可以先切换对应的持仓方向，或用「问这只」查看候选。';
+    return '所问股票代码不在当前候选名单里。可以先切换对应的持仓方向，或从名单点「查看建议」。';
   }
-  if (found.length > 1) return '请每次指定一只候选，或使用名单里的「问这只」。';
+  if (found.length > 1) return '请每次指定一只候选，或从名单点「查看建议」。';
   if (found.length === 1) return stockAnswer(question, found[0]);
 
   if (/大盘|盘面|均线/.test(question) && /怎么|依据|规则|权重|判断/.test(question)) return rules.market;
@@ -83,10 +88,77 @@ export function initAssistant(getContext) {
   const send = byId('assistant-send');
   const mode = byId('assistant-mode');
   const body = dialog.querySelector('.assistant-body');
+  const stock = byId('advice-stock');
+  const viewButtons = Array.from(dialog.querySelectorAll('[data-assistant-view]'));
   const suggestions = Array.from(dialog.querySelectorAll('.assistant-suggestions button'));
   let settings;
   let context;
   let active;
+
+  function currentPick() {
+    return context?.run?.result?.candidates.find((pick) => pick.code === stock.value);
+  }
+
+  function showView(view) {
+    const advice = view === 'advice';
+    byId('advice-panel').hidden = !advice;
+    byId('assistant-qa').hidden = advice;
+    form.hidden = advice;
+    for (const button of viewButtons) button.setAttribute('aria-pressed', String(button.dataset.assistantView === view));
+    body.scrollTop = 0;
+  }
+
+  function renderLevels(technical) {
+    const detail = byId('advice-technical');
+    detail.open = false;
+    detail.hidden = !technical;
+    if (!technical) return;
+    const price = (value) => `${value.toFixed(2)} 元`;
+    const levels = [
+      ['收盘价', price(technical.close)], ['均线排列', technical.bullish_alignment ? '多头排列' : '未呈多头'],
+      ['MA5 短线观察', price(technical.ma5)], ['MA10 回踩参考', price(technical.ma10)],
+      ['MA20 趋势复查', price(technical.ma20)], ['收盘距 MA5', `${technical.bias_ma5_pct.toFixed(2)}%`],
+    ];
+    if (technical.previous_high_20d != null) levels.push(['前 20 日高点', price(technical.previous_high_20d)]);
+    if (technical.volume_ratio_20d != null) levels.push(['成交量 / 前 20 日均量', `${technical.volume_ratio_20d.toFixed(2)} 倍`]);
+    byId('advice-levels').replaceChildren(...levels.map(([name, value]) => {
+      const row = document.createElement('div');
+      const label = document.createElement('dt');
+      const data = document.createElement('dd');
+      label.textContent = name;
+      data.textContent = value;
+      row.append(label, data);
+      return row;
+    }));
+    const sources = { tencent: '腾讯行情', sina: '新浪财经', akshare: 'AkShare', baostock: 'BaoStock', tushare: 'Tushare' };
+    byId('advice-bar-source').textContent = [technical.trade_date, sources[technical.source] ?? technical.source, '日线口径'].filter(Boolean).join(' · ');
+  }
+
+  function renderAdvice() {
+    const pick = currentPick();
+    byId('advice-empty').hidden = !!pick;
+    byId('advice-content').hidden = !pick;
+    byId('assistant-stock-question').hidden = !pick;
+    if (!pick) {
+      byId('advice-empty').textContent = snapshotMode ? '本期快照暂无这个方向的候选。' : '本轮暂无候选，可以先筛选。';
+      return;
+    }
+    const advice = pick.advice;
+    byId('advice-stance').textContent = advice?.stance ?? '观察候选';
+    byId('advice-origin').textContent = advice?.model_summary ? 'DeepSeek 解读' : '规则建议';
+    byId('advice-summary').textContent = advice?.model_summary ?? advice?.summary ?? pick.reason;
+    byId('advice-unheld').textContent = advice?.no_position ?? '先核对当前趋势和价格位置。';
+    byId('advice-held').textContent = advice?.has_position ?? pick.review;
+    byId('advice-risk').textContent = pick.risk;
+    byId('advice-holding').textContent = pick.holding;
+    byId('advice-review').textContent = pick.review;
+    renderLevels(advice?.technical);
+  }
+
+  function resolveQuestion(question) {
+    const pick = currentPick();
+    return pick && /这只|这票|该股/.test(question) ? `${pick.name}（${pick.code}）${question}` : question;
+  }
 
   function show(question, answer, source = '') {
     byId('assistant-asked').textContent = question;
@@ -116,6 +188,7 @@ export function initAssistant(getContext) {
     const controller = new AbortController();
     active = controller;
     const selection = context;
+    const resolvedQuestion = resolveQuestion(question);
     setPending(true);
     show(question, '正在查阅产品规则和候选结果…');
     try {
@@ -126,7 +199,7 @@ export function initAssistant(getContext) {
           const response = await fetch('/api/assistant', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ direction: selection.direction, run_id: selection.run?.id ?? null, question }),
+            body: JSON.stringify({ direction: selection.direction, run_id: selection.run?.id ?? null, question: resolvedQuestion.slice(0, 320) }),
             signal: AbortSignal.any([controller.signal, AbortSignal.timeout(27000)]),
           });
           const reply = response.ok ? await response.json() : null;
@@ -140,8 +213,8 @@ export function initAssistant(getContext) {
         }
         mode.textContent = 'DeepSeek 暂不可用，已切换规则问答。';
       }
-      const answer = ruleAnswer(question, config.rules, selection);
-      show(question, answer ?? '规则问答暂未覆盖这个问题。可以试试“评分怎么算”“有没有 80 分以上的”，或从候选名单点「问这只」。',
+      const answer = ruleAnswer(resolvedQuestion, config.rules, selection);
+      show(question, answer ?? '规则问答暂未覆盖这个问题。可以试试“评分怎么算”“有没有 80 分以上的”，或从候选名单点「查看建议」。',
         answer ? `规则问答 · ${dataSource(selection.run?.result)}` : '');
     } catch {
       if (!controller.signal.aborted) show(question, '暂时无法读取问答规则，请重试。');
@@ -161,13 +234,19 @@ export function initAssistant(getContext) {
     dialog.style.setProperty('--assistant-keyboard', `${Math.max(0, innerHeight - viewport.height - viewport.offsetTop)}px`);
   }
 
-  function open(question = '') {
+  function open(code = '') {
     active?.abort();
     active = null;
     setPending(false);
     context = getContext();
     input.value = '';
-    byId('assistant-context').textContent = context.run?.result?.direction_label ?? '当前持仓方向';
+    const result = context.run?.result;
+    const picks = result?.candidates ?? [];
+    byId('assistant-context').textContent = result ? `${result.direction_label} · ${dataSource(result)}` : '当前持仓方向';
+    stock.replaceChildren(...picks.map((pick) => new Option(`${pick.name} · ${pick.code}`, pick.code)));
+    if (picks.some((pick) => pick.code === code)) stock.value = code;
+    renderAdvice();
+    showView('advice');
     show('', '可以问候选为什么入选、分数怎么来的，或什么时候重新评估。');
     mode.textContent = '正在读取问答规则…';
     dialog.showModal();
@@ -176,17 +255,18 @@ export function initAssistant(getContext) {
     const openedContext = context;
     void getSettings().then((config) => {
       if (!dialog.open || context !== openedContext) return;
-      byId('assistant-context').textContent = config.rules.strategies[openedContext.direction].label;
+      if (!result) byId('assistant-context').textContent = config.rules.strategies[openedContext.direction].label;
       mode.textContent = config.ai_available ? '自由提问会发送给 DeepSeek。'
         : snapshotMode ? '收盘快照 · 规则问答' : '规则问答 · 配置 DeepSeek 后可自由提问';
     }).catch(() => {
       if (dialog.open && context === openedContext) mode.textContent = '暂时无法加载规则。';
     });
-    if (question) void ask(question, true);
   }
 
   byId('open-assistant').addEventListener('click', () => open());
   byId('close-assistant').addEventListener('click', () => dialog.close());
+  stock.addEventListener('change', renderAdvice);
+  for (const button of viewButtons) button.addEventListener('click', () => showView(button.dataset.assistantView));
   dialog.addEventListener('close', () => {
     if (dialog.open) return;
     active?.abort();
