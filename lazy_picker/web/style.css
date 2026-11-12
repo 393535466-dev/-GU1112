@@ -77,15 +77,9 @@ h1, h2, h3, p, ol, dl, dd { margin: 0; }
   white-space: nowrap;
 }
 .brand-mark {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 11px;
-  color: #fff;
-  background: linear-gradient(145deg, #526eff, #5938da);
+  display: block;
+  flex: none;
 }
-.brand-mark svg { width: 19px; height: 19px; }
 .desktop-nav, .header-tools { display: flex; align-items: center; gap: 7px; }
 .desktop-nav a, .mobile-nav a {
   display: flex;
