@@ -18,8 +18,8 @@ const links = pages.map(([key, href, label]) =>
   '<a href="' + href + '"' + (key === active ? ' aria-current="page"' : '') + '><span class="nav-icon">' + icon(key) + '</span><span>' + label + '</span></a>'
 ).join('');
 
-header.innerHTML = '<div class="header-inner"><a class="brand" href="./"><span class="brand-mark" aria-hidden="true">' +
-  icon('picker') + '</span><span>懒人选股</span></a><nav class="desktop-nav" aria-label="功能">' + links +
+header.innerHTML = '<div class="header-inner"><a class="brand" href="./"><img class="brand-mark" src="./assets/brand-mark.svg" alt="" width="36" height="36">' +
+  '<span>懒人选股</span></a><nav class="desktop-nav" aria-label="功能">' + links +
   '</nav><div class="header-tools">' + (snapshotMode ? '<span class="source-pill">收盘快照</span>' : '') +
   '<button class="theme-button" type="button"></button></div></div>';
 const bottom = document.createElement('nav');
