@@ -1,4 +1,5 @@
 import { fetchSnapshot, snapshotMode } from './shell.js';
+import { initAssistant } from './assistant.js';
 
 const options = document.getElementById('options');
 const start = document.getElementById('start');
@@ -17,6 +18,8 @@ let loading = false;
 let requestVersion = 0;
 let validDirections = [];
 let publishedRuns = {};
+let currentRun = null;
+const openAssistant = initAssistant(() => ({ direction, run: currentRun }));
 
 async function api(path, init = {}) {
   const response = await fetch(path, { cache: 'no-store', signal: AbortSignal.timeout(12000), ...init });
@@ -34,6 +37,7 @@ function showStatus(message, error = false) {
 }
 
 function clearResults() {
+  currentRun = null;
   meta.textContent = '';
   candidates.replaceChildren();
   note.hidden = true;
@@ -60,6 +64,7 @@ function setDirection(next) {
 
 function renderResult(run) {
   clearResults();
+  currentRun = run;
   const result = run.result;
   const stamp = new Date(result.snapshot_time);
   const timestamp = Number.isNaN(stamp.valueOf()) ? '' : timeFormat.format(stamp) + ' 北京时间';
@@ -95,6 +100,9 @@ function renderResult(run) {
     })) {
       row.querySelector('.' + name).textContent = value;
     }
+    const ask = row.querySelector('.ask-stock');
+    ask.setAttribute('aria-label', '问这只：' + pick.name);
+    ask.addEventListener('click', () => openAssistant(`${pick.name}（${pick.code}）为什么入选？`));
     candidates.append(row);
   }
   note.hidden = !picks.length;
