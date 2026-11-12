@@ -42,7 +42,12 @@ def export(api_root: str, output: Path) -> None:
         if captured_at.date().isoformat() != trade_date or (captured_at.hour, captured_at.minute) < (15, 0):
             continue
         published = {field: result[field] for field in RESULT_FIELDS}
-        published["candidates"] = [{field: pick[field] for field in PICK_FIELDS} for pick in result["candidates"]]
+        published["candidates"] = []
+        for pick in result["candidates"]:
+            public_pick = {field: pick[field] for field in PICK_FIELDS}
+            if "score_detail" in pick:
+                public_pick["score_detail"] = pick["score_detail"]
+            published["candidates"].append(public_pick)
         runs[key] = {"result": published}
     if not runs:
         raise ValueError("请先在本机完成至少一个方向的收盘后筛选。")
@@ -71,6 +76,7 @@ def export(api_root: str, output: Path) -> None:
 
     snapshot = {
         "picker": {"directions": directions, "runs": runs},
+        "assistant": {"rules": read("/api/assistant/rules")["rules"], "ai_available": False},
         "market": market,
         "sectors": sectors,
     }

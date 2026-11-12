@@ -21,6 +21,8 @@ from .engine.snapshot import fetch_snapshot_with_fallback
 
 logger = logging.getLogger(__name__)
 STRATEGY_DIR = Path(__file__).parent / "engine" / "strategies"
+SHORTLIST_LIMIT = 48
+CANDIDATE_LIMIT = 5
 SNAPSHOT_SOURCES = ["sina", "efinance", "akshare_em", "em_datacenter"]
 SOURCE_NAMES = {
     "sina": "新浪财经",
@@ -173,6 +175,15 @@ def _explain(pick: Pick, row: dict, style: Direction, weights: dict[str, float])
         "code": pick.code,
         "name": pick.name,
         "score": round(max(0.0, min(100.0, pick.final_score)), 1),
+        "score_detail": {
+            "base": round(pick.screen_score, 2),
+            "risk_penalty": round(pick.risk_penalty, 2),
+            "portfolio_penalty": round(pick.portfolio_penalty, 2),
+            "factors": [
+                {"name": FACTOR_NAMES[name], "score": round(value, 1), "weight_pct": round(weights[name] * 100, 1)}
+                for name, value in pick.factor_scores.items() if name in FACTOR_NAMES and weights.get(name, 0) > 0
+            ],
+        },
         "reason": reason,
         "risk": " ".join(risks[:2]) if risks else "本轮规则未标记具体风险。",
         "holding": style.holding,
@@ -261,7 +272,7 @@ def run_screen(
     if not pool.empty:
         pool = compute_screen_scores(pool, config).sort_values(
             ["screen_score", "code"], ascending=[False, True]
-        ).head(48)
+        ).head(SHORTLIST_LIMIT)
         on_progress("正在核对候选的日线走势")
         pool = enrich_daily_features(
             pool,
@@ -286,7 +297,7 @@ def run_screen(
         picks, _ = apply_risk_overlay(picks, profile=config.risk_profile, veto_high_risk=True)
         picks, _ = apply_portfolio_overlay(picks, profile=config.portfolio_profile)
         weights = normalized_factor_weights(config)
-        candidates = [_explain(pick, rows[pick.code], style, weights) for pick in picks[:5]]
+        candidates = [_explain(pick, rows[pick.code], style, weights) for pick in picks[:CANDIDATE_LIMIT]]
 
     ai_used = False
     if api_key and candidates:

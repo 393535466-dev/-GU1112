@@ -1,0 +1,71 @@
+.assistant-trigger, .assistant-suggestions button {
+  min-height: 42px;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--green);
+  background: var(--surface);
+  font-weight: 650;
+}
+.assistant-trigger:hover, .assistant-suggestions button:hover { border-color: var(--green); }
+.assistant-trigger:disabled, .assistant-suggestions button:disabled { opacity: .55; }
+.ask-stock { min-height: 36px; margin-top: 6px; font-size: 13px; }
+.result-heading { align-items: center; margin-bottom: 4px; }
+#result-meta:not(:empty) { margin-bottom: 11px; }
+#assistant {
+  width: min(580px, calc(100% - 30px));
+  max-width: none;
+  max-height: min(720px, calc(100dvh - 32px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+#assistant[open] { display: flex; flex-direction: column; }
+#assistant::backdrop { background: rgb(9 10 23 / .64); }
+body:has(#assistant:modal) { overflow: hidden; }
+.assistant-header, .assistant-body, .assistant-form { padding: 14px 18px; }
+.assistant-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+}
+#assistant-context, #assistant-mode, #assistant-source { color: var(--muted); font-size: 13px; }
+.assistant-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.assistant-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.assistant-suggestions button { min-height: 38px; font-size: 13px; background: var(--selected); }
+#assistant-reply { border-radius: 13px; padding: 12px 14px; background: var(--wash); overflow-wrap: anywhere; }
+#assistant-asked { color: var(--green); font-weight: 680; }
+#assistant-asked:not(:empty) { margin-bottom: 6px; }
+#assistant-answer { white-space: pre-wrap; }
+#assistant-source:not(:empty) { margin-top: 6px; }
+.assistant-form { border-top: 1px solid var(--line); }
+.assistant-form label { display: block; font-size: 13px; margin-bottom: 4px; }
+.assistant-compose { display: flex; gap: 8px; }
+.assistant-compose input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 7px 10px;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 16px;
+}
+#assistant-mode { margin-top: 5px; }
+@media (max-width: 720px) {
+  #assistant {
+    position: fixed;
+    inset: auto 0 var(--assistant-keyboard, 0px);
+    margin: 0;
+    width: 100%;
+    max-height: calc(var(--assistant-viewport, 100dvh) - 8px - var(--safe-top));
+    border-radius: 22px 22px 0 0;
+  }
+  .assistant-form { padding-bottom: calc(14px + var(--safe-bottom)); }
+}

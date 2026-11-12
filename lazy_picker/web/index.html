@@ -7,6 +7,7 @@
     <title>懒人选股</title>
     <script src="./assets/theme.js"></script>
     <link rel="stylesheet" href="./assets/style.css">
+    <link rel="stylesheet" href="./assets/assistant.css">
     <script type="module" src="./assets/main.js"></script>
   </head>
   <body>
@@ -33,13 +34,44 @@
       <section class="results" id="results" aria-labelledby="result-title">
         <div class="section-heading result-heading">
           <h2 id="result-title" tabindex="-1">候选名单</h2>
-          <p id="result-meta"></p>
+          <button id="open-assistant" class="assistant-trigger" type="button" aria-haspopup="dialog">问选股助手</button>
         </div>
+        <p id="result-meta"></p>
         <p id="status" class="status" role="status">正在加载选股方向…</p>
         <ol id="candidates" class="candidates" aria-label="候选股票"></ol>
         <p id="holding-note" class="holding-note" hidden>预计持仓时间来自所选策略。风险加剧或观察条件变化时，重新评估。</p>
       </section>
     </main>
+
+    <dialog id="assistant" aria-labelledby="assistant-title">
+      <header class="assistant-header">
+        <div>
+          <h2 id="assistant-title" tabindex="-1">选股助手</h2>
+          <p id="assistant-context"></p>
+        </div>
+        <button id="close-assistant" class="assistant-trigger" type="button">关闭</button>
+      </header>
+      <div class="assistant-body">
+        <div class="assistant-suggestions" aria-label="常见问题">
+          <button type="button">为什么分数偏低？</button>
+          <button type="button">评分怎么算？</button>
+          <button type="button">候选适合观察多久？</button>
+        </div>
+        <div id="assistant-reply" role="status" aria-live="polite" aria-atomic="true">
+          <p id="assistant-asked"></p>
+          <p id="assistant-answer">可以问候选为什么入选、分数怎么来的，或什么时候重新评估。</p>
+          <p id="assistant-source"></p>
+        </div>
+      </div>
+      <form id="assistant-form" class="assistant-form">
+        <label for="assistant-question">你的问题</label>
+        <div class="assistant-compose">
+          <input id="assistant-question" type="text" required maxlength="320" placeholder="例如：这轮有没有 80 分以上的？" autocomplete="off">
+          <button id="assistant-send" class="start" type="submit">发送</button>
+        </div>
+        <p id="assistant-mode">正在读取问答规则…</p>
+      </form>
+    </dialog>
 
     <template id="direction-template">
       <button type="button" class="direction" aria-pressed="false">
@@ -70,6 +102,7 @@
             <summary>什么时候重新评估</summary>
             <p class="review"></p>
           </details>
+          <button class="ask-stock assistant-trigger" type="button" aria-haspopup="dialog">问这只</button>
         </article>
       </li>
     </template>

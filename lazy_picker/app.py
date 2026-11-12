@@ -7,16 +7,17 @@ import logging
 import os
 from pathlib import Path
 import sqlite3
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StringConstraints
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from .assistant import model_answer, product_rules
 from .market import MarketUnavailable, get_market_report
 from .picker import ScreeningDataError, directions, run_screen, utc_now
 from .sectors import SectorCategory, get_sector_detail, get_sector_overview
@@ -32,6 +33,12 @@ DirectionId = Literal["short", "swing", "defensive", "long"]
 
 class RunRequest(BaseModel):
     direction: DirectionId
+
+
+class AssistantRequest(BaseModel):
+    direction: DirectionId
+    question: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=320)]
+    run_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
 
 
 @contextmanager
@@ -159,6 +166,31 @@ def sector_detail(category: SectorCategory, sector_id: str):
 @app.get("/api/directions")
 def available_directions():
     return directions()
+
+
+@app.get("/api/assistant/rules")
+def assistant_rules():
+    return {"rules": product_rules(), "ai_available": bool(os.environ.get("DEEPSEEK_API_KEY", "").strip())}
+
+
+@app.post("/api/assistant")
+def ask_assistant(request: AssistantRequest):
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if not api_key:
+        return {"mode": "rules"}
+    result = None
+    if request.run_id:
+        with database() as db:
+            row = db.execute(
+                "SELECT result FROM runs WHERE id = ? AND direction = ? AND status = 'completed'",
+                (request.run_id, request.direction),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="这轮筛选结果已不可用，请重新打开候选。")
+        result = json.loads(row["result"])
+    answer = model_answer(request.question, request.direction, result, DATA, api_key=api_key,
+                          model=os.environ.get("DEEPSEEK_MODEL", "").strip() or "deepseek-flash")
+    return {"mode": "ai", "answer": answer} if answer else {"mode": "rules"}
 
 
 @app.get("/api/runs/active")
