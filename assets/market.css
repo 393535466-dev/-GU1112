@@ -1,0 +1,77 @@
+.market-workspace {
+  --rise: #a73628;
+  --fall: #18704e;
+  --average: #87612e;
+}
+[data-theme="dark"] .market-workspace {
+  --rise: #ffab9d;
+  --fall: #96dbaf;
+  --average: #e2bb7b;
+}
+.market-section { margin-top: 24px; }
+.market-workspace > .market-section { margin-top: 0; }
+.market-muted { color: var(--muted); font-size: 13px; }
+.market-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.market-card {
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  min-width: 0;
+}
+.market-card h3 { font-size: 16px; }
+.market-score {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+#temperature-score { color: var(--green); font-size: 35px; font-weight: 710; }
+#temperature-label, .trend-label {
+  margin-inline-start: 7px;
+  padding: 2px 8px;
+  color: var(--green);
+  background: var(--selected);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.breadth-counts, .trend-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+.breadth-counts dt, .trend-stats dt { color: var(--muted); font-size: 13px; }
+.breadth-counts dd, .trend-stats dd, .index-close { font-weight: 660; font-variant-numeric: tabular-nums; }
+.breadth-counts dd { font-size: 22px; }
+.rise { color: var(--rise); }
+.fall { color: var(--fall); }
+.trend-card { margin-top: 10px; }
+.trend-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  padding-top: 11px;
+}
+.chart-key { display: flex; flex-wrap: wrap; gap: 5px 15px; color: var(--muted); font-size: 13px; }
+.chart-key span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-key i { width: 15px; height: 2px; background: var(--green); }
+.chart-key .average-key { background: var(--average); }
+#trend-chart { display: block; width: 100%; height: clamp(160px, 28vw, 255px); }
+.sector-list { list-style: none; padding: 0; margin: 5px 0 0; }
+.sector-list li { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; }
+.sector-list li + li { border-top: 1px solid var(--line); }
+.sector-list span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sector-link { color: var(--green); text-underline-offset: 3px; }
+#market-status:not(:empty) + #market-report { margin-top: 10px; }
+
+@media (max-width: 540px) {
+  .market-overview { grid-template-columns: minmax(0, 1fr); }
+  .trend-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .market-card { padding-inline: 12px; }
+}

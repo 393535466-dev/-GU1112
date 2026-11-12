@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="snapshot">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f2f4ff">
+    <title>懒人选股</title>
+    <script src="./assets/theme.js"></script>
+    <link rel="stylesheet" href="./assets/style.css">
+    <script type="module" src="./assets/main.js"></script>
+  </head>
+  <body>
+    <header class="site-header" data-page="picker"></header>
+    <main class="workspace" id="main-content">
+      <section class="picker-hero" aria-labelledby="picker-title">
+        <div class="hero-content">
+          <p class="hero-scope">A 股选股</p>
+          <h1 id="picker-title">按你的节奏选股</h1>
+          <p>选个持仓方向，查看最多 5 只候选。</p>
+        </div>
+        <div class="hero-art" aria-hidden="true"></div>
+      </section>
+
+      <section class="directions" aria-labelledby="direction-title">
+        <div class="section-heading">
+          <h2 id="direction-title">持仓方向</h2>
+          <button id="start" class="start" type="button" disabled>筛选候选</button>
+          <a class="jump-results" href="#results">查看候选 ↓</a>
+        </div>
+        <div id="options" class="options" role="group" aria-labelledby="direction-title"></div>
+      </section>
+
+      <section class="results" id="results" aria-labelledby="result-title">
+        <div class="section-heading result-heading">
+          <h2 id="result-title" tabindex="-1">候选名单</h2>
+          <p id="result-meta"></p>
+        </div>
+        <p id="status" class="status" role="status">正在加载选股方向…</p>
+        <ol id="candidates" class="candidates" aria-label="候选股票"></ol>
+        <p id="holding-note" class="holding-note" hidden>预计持仓时间来自所选策略。风险加剧或观察条件变化时，重新评估。</p>
+      </section>
+    </main>
+
+    <template id="direction-template">
+      <button type="button" class="direction" aria-pressed="false">
+        <span class="direction-title"></span>
+        <span class="direction-holding"></span>
+        <span class="direction-description"></span>
+      </button>
+    </template>
+    <template id="candidate-template">
+      <li class="candidate">
+        <article>
+          <div class="candidate-heading">
+            <div>
+              <h3 class="stock-name"></h3>
+              <p class="stock-code"></p>
+            </div>
+            <div class="score">
+              <span class="score-value"></span><span class="score-scale"> / 100</span>
+              <span class="score-label">筛选评分</span>
+            </div>
+          </div>
+          <dl>
+            <div><dt>入选理由</dt><dd class="reason"></dd></div>
+            <div><dt>主要风险</dt><dd class="risk"></dd></div>
+            <div><dt>预计持仓</dt><dd class="holding"></dd></div>
+          </dl>
+          <details>
+            <summary>什么时候重新评估</summary>
+            <p class="review"></p>
+          </details>
+        </article>
+      </li>
+    </template>
+  </body>
+</html>
