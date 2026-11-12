@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="local">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f2f4ff">
+    <title>板块分析 · 懒人选股</title>
+    <script src="./assets/theme.js"></script>
+    <link rel="stylesheet" href="./assets/style.css">
+    <link rel="stylesheet" href="./assets/market.css">
+    <link rel="stylesheet" href="./assets/sectors.css">
+    <script type="module" src="./assets/sectors.js"></script>
+  </head>
+  <body>
+    <header class="site-header" data-page="sectors"></header>
+    <main class="workspace market-workspace" id="main-content">
+
+      <section class="market-section" aria-labelledby="sector-title">
+        <div class="section-heading">
+          <div><h1 id="sector-title">板块分析</h1><p id="sector-meta" class="market-muted"></p></div>
+          <button id="refresh-sectors" class="start" type="button" disabled>更新数据</button>
+        </div>
+        <div id="sector-kinds" class="sector-kinds" role="group" aria-label="板块类型">
+          <button class="direction" type="button" data-category="industry" aria-pressed="true">行业</button>
+          <button class="direction" type="button" data-category="concept" aria-pressed="false">概念</button>
+        </div>
+        <p id="sector-status" class="status" role="status">正在读取板块收盘数据…</p>
+        <div id="sector-report" hidden>
+          <div class="market-card sector-overview">
+            <div class="sector-breadth">
+              <span class="rise"><strong id="sectors-up"></strong> 上涨</span>
+              <span class="fall"><strong id="sectors-down"></strong> 下跌</span>
+              <span><strong id="sectors-flat"></strong> 持平</span>
+            </div>
+            <div id="sector-bar" class="sector-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+            <p id="sector-summary" class="market-muted"></p>
+          </div>
+
+          <div id="sector-layout" class="sector-layout">
+            <section class="market-card sector-ranking" aria-labelledby="rank-title">
+              <h3 id="rank-title">板块排行</h3>
+              <div class="sector-controls">
+                <label>查找板块<input id="sector-search" type="search" placeholder="输入板块名称" autocomplete="off"></label>
+                <label>排序<select id="sector-sort">
+                  <option value="gainers">涨幅从高到低</option>
+                  <option value="losers">跌幅从大到小</option>
+                  <option value="amount">成交额从高到低</option>
+                </select></label>
+              </div>
+              <table>
+                <thead><tr>
+                  <th scope="col">名次</th><th scope="col">板块</th><th scope="col">涨跌幅</th><th scope="col">成交额（亿）</th>
+                </tr></thead>
+                <tbody id="sector-rows"></tbody>
+              </table>
+              <div class="sector-pagination">
+                <p id="sector-range" class="market-muted" role="status"></p>
+                <div>
+                  <button type="button" id="sector-previous">上一页</button>
+                  <button type="button" id="sector-next">下一页</button>
+                </div>
+              </div>
+            </section>
+            <dialog id="sector-detail" class="market-card sector-detail" aria-labelledby="detail-title">
+              <div class="section-heading">
+                <h3 id="detail-title" tabindex="-1"></h3>
+                <button id="close-detail" type="button">关闭</button>
+              </div>
+              <p id="detail-relative"></p>
+              <dl class="sector-facts">
+                <div><dt>当日涨跌</dt><dd id="detail-change"></dd></div>
+                <div><dt>成交额</dt><dd id="detail-amount"></dd></div>
+                <div><dt>成分股数</dt><dd id="detail-count"></dd></div>
+                <div><dt>行情领涨股</dt><dd id="detail-leader"></dd></div>
+              </dl>
+              <p id="member-status" class="market-muted" role="status"></p>
+              <div id="member-report" hidden>
+                <h4>成分股涨跌</h4>
+                <p id="member-breadth"></p>
+                <h4>涨幅靠前</h4><ul id="member-leaders" class="sector-list"></ul>
+                <h4>跌幅靠前</h4><ul id="member-laggards" class="sector-list"></ul>
+              </div>
+            </dialog>
+          </div>
+        </div>
+      </section>
+    </main>
+    <template id="sector-row">
+      <tr><td class="sector-rank"></td><td><button class="sector-name" type="button"></button></td><td class="sector-change"></td><td class="sector-amount"></td></tr>
+    </template>
+  </body>
+</html>

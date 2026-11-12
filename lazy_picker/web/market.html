@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="local">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f2f4ff">
+    <title>大盘分析与趋势 · 懒人选股</title>
+    <script src="./assets/theme.js"></script>
+    <link rel="stylesheet" href="./assets/style.css">
+    <link rel="stylesheet" href="./assets/market.css">
+    <script type="module" src="./assets/market.js"></script>
+  </head>
+  <body>
+    <header class="site-header" data-page="market"></header>
+    <main class="workspace market-workspace" id="main-content">
+
+      <section class="market-section" aria-labelledby="market-title">
+        <div class="section-heading">
+          <div><h1 id="market-title">大盘分析与趋势</h1><p id="trade-date" class="market-muted"></p></div>
+          <button id="refresh-market" class="start" type="button">更新数据</button>
+        </div>
+        <p id="market-status" class="status" role="status">正在读取收盘行情…</p>
+        <div id="market-report" hidden>
+          <div class="market-overview">
+            <article class="market-card" aria-labelledby="temperature-title">
+              <h3 id="temperature-title">盘面强弱</h3>
+              <p class="market-score"><span id="temperature-score"></span><span class="market-muted"> / 100</span><strong id="temperature-label"></strong></p>
+              <p id="temperature-reason" class="market-muted"></p>
+              <details>
+                <summary>评分依据</summary>
+                <p>上涨家数占比权重为 45%，主要指数平均涨跌为 35%，涨跌停对比为 20%。缺失维度以中性值 50 计。</p>
+              </details>
+            </article>
+            <article class="market-card" aria-labelledby="breadth-title">
+              <h3 id="breadth-title">市场涨跌</h3>
+              <dl id="breadth-counts" class="breadth-counts">
+                <div><dt>上涨</dt><dd id="up-count" class="rise"></dd></div>
+                <div><dt>下跌</dt><dd id="down-count" class="fall"></dd></div>
+                <div><dt>平盘</dt><dd id="flat-count"></dd></div>
+              </dl>
+              <p id="breadth-detail" class="market-muted"></p>
+              <p id="limit-detail" class="market-muted"></p>
+            </article>
+          </div>
+
+          <section class="market-section" aria-labelledby="trend-title">
+            <div class="section-heading">
+              <h2 id="trend-title">主要指数趋势</h2>
+              <p id="missing-indices" class="market-muted" hidden></p>
+            </div>
+            <div id="index-options" class="options" role="group" aria-labelledby="trend-title"></div>
+            <article class="market-card trend-card">
+              <div class="section-heading">
+                <div><h3 id="chart-title"></h3><p id="trend-detail" class="market-muted"></p></div>
+                <span id="trend-label" class="trend-label"></span>
+              </div>
+              <div class="chart-key">
+                <span><i class="close-key"></i>收盘价</span>
+                <span><i class="average-key"></i>20 日均线</span>
+              </div>
+              <canvas id="trend-chart" role="img"></canvas>
+              <dl class="trend-stats">
+                <div><dt>近 5 日涨跌</dt><dd id="change-5d"></dd></div>
+                <div><dt>20 日均线</dt><dd id="ma20"></dd></div>
+                <div><dt>60 日均线</dt><dd id="ma60"></dd></div>
+                <div><dt>日线来源</dt><dd id="index-source"></dd></div>
+              </dl>
+            </article>
+          </section>
+
+          <section class="market-section" aria-labelledby="sector-title">
+            <div class="section-heading">
+              <div><h2 id="sector-title">行业板块</h2><p id="sector-source" class="market-muted"></p></div>
+              <a class="sector-link" href="./sectors.html">查看完整排行 →</a>
+            </div>
+            <div class="market-overview">
+              <article class="market-card"><h3>领涨</h3><ul id="leaders" class="sector-list"></ul></article>
+              <article class="market-card"><h3>领跌</h3><ul id="laggards" class="sector-list"></ul></article>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+    <template id="index-template">
+      <button class="direction" type="button" aria-pressed="false">
+        <span class="direction-title"></span>
+        <span class="index-close"></span>
+        <span class="index-change"></span>
+      </button>
+    </template>
+  </body>
+</html>

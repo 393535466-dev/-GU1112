@@ -1,0 +1,11 @@
+akshare>=1.19,<1.20
+baostock>=0.8,<1
+efinance>=0.5.5,<0.6
+exchange-calendars>=4.13,<5
+fastapi>=0.115,<1
+mini-racer>=0.13.2,<1; platform_system != "Linux"
+pandas>=2.2,<4
+python-dotenv>=1,<2
+PyYAML>=6,<7
+requests>=2.32,<3
+uvicorn>=0.34,<1
