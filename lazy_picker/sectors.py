@@ -11,6 +11,7 @@ from threading import Lock
 from typing import Callable, Literal
 
 import pandas as pd
+import requests
 
 from .engine.normalize import safe_float, safe_text
 from .engine.source_guard import call_with_timeout
@@ -22,6 +23,20 @@ _NAMES = {"industry": "行业", "concept": "概念"}
 _LOCKS = {category: Lock() for category in _NAMES}
 _CACHE_TTL = timedelta(minutes=5)
 _SECTOR_ID = re.compile(r"[a-zA-Z0-9_]{1,64}")
+
+
+def _sina_sector_https(indicator: str) -> pd.DataFrame:
+    """Use the provider's HTTPS endpoint with a bounded request timeout."""
+    response = requests.get(
+        "https://money.finance.sina.com.cn/q/view/newFLJK.php",
+        params={"param": "industry" if indicator == "行业" else "class"},
+        timeout=(2, 4),
+    )
+    response.raise_for_status()
+    payload = json.loads(response.text[response.text.index("{"):])
+    columns = ["label", "板块", "公司家数", "平均价格", "涨跌额", "涨跌幅",
+               "总成交量", "总成交额", "股票代码", "个股-涨跌幅", "个股-当前价", "个股-涨跌额", "股票名称"]
+    return pd.DataFrame([value.split(",") for value in payload.values()], columns=columns)
 
 
 def _fetch(fetch: Callable, **kwargs) -> pd.DataFrame | None:
@@ -102,6 +117,7 @@ def get_sector_group(
             return cached
         eastmoney = ak.stock_board_industry_name_em if category == "industry" else ak.stock_board_concept_name_em
         for source, fetch, kwargs in (
+            ("新浪财经", _sina_sector_https, {"indicator": _NAMES[category]}),
             ("新浪财经", ak.stock_sector_spot, {"indicator": _NAMES[category]}),
             ("东方财富", eastmoney, {}),
         ):

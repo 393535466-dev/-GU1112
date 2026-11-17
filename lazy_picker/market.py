@@ -116,7 +116,7 @@ def _breadth(data_dir: Path) -> dict | None:
         fallback_max_age_hours=.05,
         cache_ttl_seconds=120,
         expected_trade_date=closing_quote_session()[0],
-        timeout=19,
+        timeout=45,
     )
     if frame is None or frame.attrs.get("stale"):
         return None
