@@ -11,21 +11,22 @@ import pandas as pd
 import requests
 import yaml
 
-from .advice import candidate_advice
+from .advice import BAD_BAR_FLAGS, candidate_advice
 from .engine.daily import enrich_daily_features
-from .engine.filter import apply_hard_filters, requires_daily_features, without_daily_filters
+from .engine.filter import apply_hard_filters, without_daily_filters
 from .engine.models import HardFilterConfig, Pick, ScreeningConfig
 from .engine.normalize import safe_float, safe_text
 from .engine.risk import apply_portfolio_overlay, apply_risk_overlay
 from .engine.scorer import compute_screen_scores, factor_score_columns, normalized_factor_weights
-from .engine.snapshot import fetch_snapshot_with_fallback
+from .engine.snapshot import expected_quote_date, fetch_snapshot_with_fallback
 from .engine.trading_calendar import get_effective_trading_date
 
 logger = logging.getLogger(__name__)
 STRATEGY_DIR = Path(__file__).parent / "engine" / "strategies"
 SHORTLIST_LIMIT = 48
 CANDIDATE_LIMIT = 5
-SNAPSHOT_SOURCES = ["sina", "efinance", "akshare_em", "em_datacenter"]
+SCREENING_VERSION = "2"
+SNAPSHOT_SOURCES = ["em_datacenter", "sina", "efinance", "akshare_em"]
 SOURCE_NAMES = {
     "sina": "新浪财经",
     "efinance": "东方财富（eFinance）",
@@ -99,6 +100,27 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def result_freshness(result: dict, current_time: datetime | None = None) -> dict:
+    now = current_time or datetime.now(timezone.utc)
+    try:
+        expected = expected_quote_date(now).isoformat()
+        fetched = datetime.fromisoformat(result["snapshot_time"])
+        if fetched.tzinfo is None:
+            raise ValueError("missing timezone")
+        age = (now - fetched).total_seconds()
+    except (KeyError, TypeError, ValueError, RuntimeError):
+        return {"needs_refresh": True, "reason": "行情日期尚未核验，请重新筛选。"}
+    if result.get("screening_version") != SCREENING_VERSION:
+        return {"needs_refresh": True, "reason": "上次结果需要按当前规则重新核验。"}
+    if result.get("quote_trade_date") != expected:
+        return {"needs_refresh": True, "reason": f"上次结果已过期，正在更新 {expected} 的行情。"}
+    completed = get_effective_trading_date("cn", current_time=now).isoformat()
+    captured_close = get_effective_trading_date("cn", current_time=fetched).isoformat()
+    intraday = expected > completed
+    outdated = bool(result.get("stale") or age < 0 or captured_close < completed or (intraday and age > 300))
+    return {"needs_refresh": outdated, "reason": "行情已过期，正在重新筛选。" if outdated else ""}
+
+
 def directions() -> list[dict]:
     return [
         {"id": key, "title": style.title, "description": style.description, "holding": style.holding}
@@ -128,6 +150,44 @@ def snapshot_columns(filters: HardFilterConfig) -> list[str]:
         name for name, thresholds in rules.items()
         if name not in {"price", "change_pct", "amount"} and any(value is not None for value in thresholds)
     ]
+
+
+def _industry_snapshot(snapshot: pd.DataFrame) -> pd.DataFrame:
+    """Calculate industry context from traded names before strategy filtering."""
+    if "industry" not in snapshot:
+        return pd.DataFrame()
+    snapshot = snapshot.drop_duplicates(subset="code")
+    industries = snapshot["industry"].fillna("").astype(str).str.strip()
+    returns = pd.to_numeric(snapshot["change_pct"], errors="coerce")
+    amounts = pd.to_numeric(snapshot["amount"], errors="coerce")
+    unknown = {"", "-", "--", "未知", "未分类", "其他", "无", "nan"}
+    active = ~industries.isin(unknown) & amounts.gt(0)
+    members = returns.where(active & returns.abs().lt(float("inf"))).dropna()
+    groups = members.groupby(industries)
+    stats = groups.agg(industry_sample_size="size", industry_median_pct="median")
+    stats["industry_advancers_pct"] = members.gt(0).groupby(industries).mean() * 100
+    return stats.loc[stats["industry_sample_size"].ge(5)]
+
+
+def _market_evidence(row: dict, completed_date: str, *, stale: bool) -> list[str]:
+    evidence = []
+    daily_date = safe_text(row.get("daily_trade_date"))
+    flags = set(safe_text(row.get("daily_quality_flags")).split(";"))
+    if stale or daily_date != completed_date or flags & BAD_BAR_FLAGS:
+        evidence.append("日线数据不足或未更新至最近收盘")
+    elif (return_20d := safe_float(row.get("change_20d"))) is not None:
+        evidence.append(f"近20个交易日涨跌 {return_20d:+.1f}% · 日线 {daily_date}")
+    else:
+        evidence.append(f"近20个交易日样本不足 · 日线 {daily_date}")
+    median = safe_float(row.get("industry_median_pct"))
+    breadth = safe_float(row.get("industry_advancers_pct"))
+    size = safe_float(row.get("industry_sample_size"))
+    change = safe_float(row.get("change_pct"))
+    if not stale and all(value is not None for value in (median, breadth, size, change)):
+        evidence.append(f"较同行当日涨跌中位数 {change - median:+.1f} 个百分点 · 同行 {breadth:.0f}% 上涨（{int(size)} 只）")
+    else:
+        evidence.append("当日行业对照数据不足")
+    return evidence
 
 
 def _candidate(row: dict, rank: int) -> Pick:
@@ -176,6 +236,9 @@ def _explain(pick: Pick, row: dict, style: Direction, weights: dict[str, float])
     return {
         "code": pick.code,
         "name": pick.name,
+        "price": pick.price,
+        "change_pct": pick.change_pct,
+        "quote_date": safe_text(row.get("quote_date")),
         "score": round(max(0.0, min(100.0, pick.final_score)), 1),
         "score_detail": {
             "base": round(pick.screen_score, 2),
@@ -247,19 +310,23 @@ def run_screen(
     required = snapshot_columns(filters)
     on_progress("正在获取 A 股行情")
     try:
+        quote_date = expected_quote_date()
         snapshot = fetch_snapshot_with_fallback(
             SNAPSHOT_SOURCES,
             required_columns=required,
             fallback_snapshot_path=data_dir / "market.json",
             fallback_max_age_hours=18,
             cache_ttl_seconds=300,
+            expected_trade_date=quote_date,
         )
     except RuntimeError as exc:
-        raise ScreeningDataError("暂时无法获取满足该方向条件的 A 股行情，请稍后重试。") from exc
+        raise ScreeningDataError("暂时无法取得日期已核验的最新行情，请稍后重试。") from exc
     snapshot_time = snapshot.attrs.get("last_good_created_at") or utc_now()
     snapshot_source = snapshot.attrs.get("last_good_snapshot_source") or snapshot.attrs.get("snapshot_source", "")
     cached = bool(snapshot.attrs.get("cache_used") or snapshot.attrs.get("fallback_used"))
     stale = bool(snapshot.attrs.get("stale"))
+    if stale:
+        raise ScreeningDataError("行情源暂不可用，已保存的行情需要重新确认，请稍后重试。")
 
     valid = snapshot.copy()
     valid["code"] = valid["code"].astype(str).str.strip().str.zfill(6)
@@ -287,10 +354,21 @@ def run_screen(
             max_workers=6,
         )
         daily_count = int(pool.attrs.get("daily_success_count", 0))
-        if requires_daily_features(config.hard_filters):
-            if daily_count == 0:
-                raise ScreeningDataError("没有获取到该方向所需的日线行情，请稍后重试。")
-            pool = apply_hard_filters(pool, config.hard_filters)
+        completed = get_effective_trading_date("cn", current_time=datetime.now(timezone.utc)).isoformat()
+        usable = pool["daily_trade_date"].isin({completed, quote_date.isoformat()})
+        usable &= ~pool["daily_quality_flags"].fillna("").apply(
+            lambda flags: bool(set(str(flags).split(";")) & BAD_BAR_FLAGS)
+        )
+        pool = pool.loc[usable]
+        if pool.empty:
+            raise ScreeningDataError("候选的日线尚未更新或存在异常，暂时无法生成已核验名单。")
+        pool = apply_hard_filters(pool, config.hard_filters)
+
+    industry_stats = _industry_snapshot(snapshot)
+    if not industry_stats.empty and not pool.empty:
+        pool = pool.assign(industry=pool["industry"].fillna("").str.strip()).join(
+            industry_stats, on="industry"
+        )
 
     on_progress("正在计算评分和风险")
     candidates = []
@@ -304,13 +382,19 @@ def run_screen(
         candidates = [_explain(pick, rows[pick.code], style, weights) for pick in picks[:CANDIDATE_LIMIT]]
         completed_date = get_effective_trading_date("cn", current_time=datetime.now(timezone.utc)).isoformat()
         for candidate in candidates:
-            candidate["advice"] = candidate_advice(rows[candidate["code"]], completed_date, stale=stale)
+            row = rows[candidate["code"]]
+            candidate["advice"] = candidate_advice(row, completed_date, stale=stale)
+            candidate["market_evidence"] = _market_evidence(row, completed_date, stale=stale)
 
     ai_used = False
     if api_key and candidates:
         on_progress("正在整理 AI 建议")
         ai_used = _add_model_advice(candidates, style, api_key, model)
+    if expected_quote_date() != quote_date:
+        raise ScreeningDataError("筛选期间交易日已切换，请重新筛选。")
     return {
+        "screening_version": SCREENING_VERSION,
+        "quote_trade_date": quote_date.isoformat(),
         "direction": direction,
         "direction_label": style.title,
         "snapshot_time": snapshot_time,

@@ -24,7 +24,11 @@ const openAssistant = initAssistant(() => ({ direction, run: currentRun }));
 async function api(path, init = {}) {
   const response = await fetch(path, { cache: 'no-store', signal: AbortSignal.timeout(12000), ...init });
   if (!response.ok) {
-    const error = new Error('连接选股服务失败，请稍后重试。');
+    const payload = await response.json().catch(() => null);
+    const message = typeof payload?.detail === 'string' ? payload.detail
+      : response.status === 504 ? '本次行情获取超时，请稍后重新筛选。'
+      : '连接选股服务失败，请稍后重试。';
+    const error = new Error(message);
     error.status = response.status;
     throw error;
   }
@@ -64,12 +68,21 @@ function setDirection(next) {
 
 function renderResult(run) {
   clearResults();
+  if (run.freshness?.needs_refresh) {
+    showStatus(run.freshness.reason + '请重新筛选。', true);
+    return;
+  }
   currentRun = run;
   const result = run.result;
   const stamp = new Date(result.snapshot_time);
   const timestamp = Number.isNaN(stamp.valueOf()) ? '' : timeFormat.format(stamp) + ' 北京时间';
   const source = result.snapshot_source === 'last_good_cache' ? '本地行情缓存' : result.snapshot_source;
-  meta.textContent = [result.direction_label, source, timestamp].filter(Boolean).join(' · ');
+  meta.textContent = [
+    result.direction_label,
+    result.quote_trade_date ? result.quote_trade_date + ' 行情' : '历史快照',
+    source,
+    timestamp ? '获取于 ' + timestamp : '',
+  ].filter(Boolean).join(' · ');
   const messages = [];
   if (result.stale) {
     messages.push('行情源暂不可用，本轮使用了上次成功的行情。');
@@ -93,12 +106,19 @@ function renderResult(run) {
       'stock-name': pick.name,
       'stock-code': pick.code,
       'score-value': pick.score.toFixed(1),
-      reason: pick.reason,
+      reason: [pick.reason, ...(pick.market_evidence ?? [])].filter(Boolean).join("　"),
       risk: pick.risk,
       holding: pick.holding,
       review: pick.review,
     })) {
       row.querySelector('.' + name).textContent = value;
+    }
+    const quote = row.querySelector('.stock-quote');
+    if (Number.isFinite(pick.price) && Number.isFinite(pick.change_pct)) {
+      const change = (pick.change_pct > 0 ? '+' : '') + pick.change_pct.toFixed(2) + '%';
+      quote.textContent = '行情价 ' + pick.price.toFixed(2) + ' 元 · 当日 ' + change;
+    } else {
+      quote.hidden = true;
     }
     const ask = row.querySelector('.ask-stock');
     ask.setAttribute('aria-label', '查看建议：' + pick.name);
@@ -116,6 +136,11 @@ async function loadLatest() {
     const run = snapshotMode ? publishedRuns[direction] : await api('/api/runs/latest?direction=' + encodeURIComponent(direction));
     if (version !== requestVersion) return;
     if (run?.result) {
+      if (!snapshotMode && run.freshness?.needs_refresh) {
+        showStatus(run.freshness.reason);
+        await screenCurrentDirection();
+        return;
+      }
       renderResult(run);
     } else {
       showStatus(snapshotMode ? '本期收盘快照暂无该方向的结果。' : '点击「筛选候选」开始。');
@@ -156,17 +181,19 @@ async function followRun(run) {
   }
 }
 
-start.addEventListener('click', async () => {
-  if (loading) return;
+async function screenCurrentDirection(scroll = false) {
   loading = true;
   requestVersion += 1;
   updateControls();
   clearResults();
-  showStatus('正在提交筛选…');
-  document.getElementById('result-title').focus({ preventScroll: true });
-  document.getElementById('results').scrollIntoView({ block: 'start' });
+  showStatus('正在获取行情并筛选，请保持页面打开…');
+  if (scroll) {
+    document.getElementById('result-title').focus({ preventScroll: true });
+    document.getElementById('results').scrollIntoView({ block: 'start' });
+  }
   try {
     const run = await api('/api/runs', {
+      signal: AbortSignal.timeout(310000),
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ direction }),
@@ -177,6 +204,26 @@ start.addEventListener('click', async () => {
   } finally {
     loading = false;
     updateControls();
+  }
+}
+
+start.addEventListener('click', () => {
+  if (!loading) void screenCurrentDirection(true);
+});
+
+window.addEventListener('focus', async () => {
+  if (snapshotMode || loading || !currentRun?.id) return;
+  const runId = currentRun.id;
+  try {
+    const run = await api('/api/runs/' + encodeURIComponent(runId));
+    if (!loading && currentRun?.id === runId && run.freshness?.needs_refresh) {
+      await loadLatest();
+    }
+  } catch {
+    if (!loading && currentRun?.id === runId) {
+      showStatus('暂时无法核对行情日期，请重新筛选后再查看。', true);
+      clearResults();
+    }
   }
 });
 

@@ -36,10 +36,13 @@ def export(api_root: str, output: Path) -> None:
         key = direction["id"]
         run = read("/api/runs/latest?direction=" + quote(key, safe=""))
         result = run.get("result") if run else None
-        if not result or result.get("stale"):
+        if not result or result.get("stale") or run.get("freshness", {}).get("needs_refresh"):
             continue
         captured_at = datetime.fromisoformat(result["snapshot_time"]).astimezone(SHANGHAI)
-        if captured_at.date().isoformat() != trade_date or (captured_at.hour, captured_at.minute) < (15, 0):
+        quote_date = result.get("quote_trade_date")
+        if quote_date and quote_date != trade_date:
+            continue
+        if not quote_date and (captured_at.date().isoformat() != trade_date or (captured_at.hour, captured_at.minute) < (15, 0)):
             continue
         published = {field: result[field] for field in RESULT_FIELDS}
         published["candidates"] = []
@@ -49,7 +52,13 @@ def export(api_root: str, output: Path) -> None:
                 public_pick["score_detail"] = pick["score_detail"]
             if "advice" in pick:
                 public_pick["advice"] = pick["advice"]
+            for field in ("price", "change_pct", "quote_date", "market_evidence"):
+                if field in pick:
+                    public_pick[field] = pick[field]
             published["candidates"].append(public_pick)
+        for field in ("quote_trade_date", "screening_version"):
+            if field in result:
+                published[field] = result[field]
         runs[key] = {"result": published}
     if not runs:
         raise ValueError("请先在本机完成至少一个方向的收盘后筛选。")

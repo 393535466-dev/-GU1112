@@ -23,6 +23,7 @@ from .source_guard import call_with_timeout, parse_source_timeout_seconds
 
 _DAILY_FEATURE_DEFAULTS = {
     "daily_data_points": pd.NA,
+    "change_20d": pd.NA,
     "change_60d": pd.NA,
     "daily_trade_date": "",
     "daily_close": pd.NA,
@@ -1025,6 +1026,8 @@ def compute_daily_features(hist: pd.DataFrame) -> dict[str, object]:
 
     return {
         "daily_data_points": int(len(close)),
+        "change_20d": round((last_close / float(close.iloc[-21]) - 1) * 100, 4)
+        if len(close) >= 21 and close.iloc[-21] > 0 else None,
         "change_60d": None if change_60d is None else round(float(change_60d), 4),
         "daily_trade_date": "" if pd.isna(last_date) else last_date.date().isoformat(),
         "daily_close": last_close,

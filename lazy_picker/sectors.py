@@ -1,7 +1,7 @@
 """Closing-session industry and concept rankings and constituent summaries."""
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 import json
 import logging
 from pathlib import Path
@@ -14,7 +14,7 @@ import pandas as pd
 
 from .engine.normalize import safe_float, safe_text
 from .engine.source_guard import call_with_timeout
-from .engine.trading_calendar import get_effective_trading_date, get_market_now
+from .engine.trading_calendar import get_effective_trading_date, get_market_now, get_next_trading_date
 
 logger = logging.getLogger(__name__)
 SectorCategory = Literal["industry", "concept"]
@@ -108,6 +108,10 @@ def get_sector_group(
             frame = _fetch(fetch, **kwargs)
             group = rank_sectors(frame, source) if frame is not None else None
             if group:
+                # A slow request may finish after the opening auction starts.
+                # Its spot quotes can then belong to a different session.
+                if closing_quote_session() != (session, True):
+                    break
                 group.update(trade_date=session.isoformat(), generated_at=get_market_now("cn").isoformat())
                 pending = path.with_suffix(".tmp")
                 pending.write_text(json.dumps(group, ensure_ascii=False, allow_nan=False), encoding="utf-8")
@@ -116,14 +120,23 @@ def get_sector_group(
         return {**cached, "refresh_failed": True} if cached else None
 
 
-def _market_session() -> tuple[date, bool]:
-    now = get_market_now("cn")
+def closing_quote_session(current_time: datetime | None = None) -> tuple[date, bool]:
+    """Allow close snapshots until the next session's opening auction.
+
+    Spot endpoints retain the last close overnight and on non-trading days.
+    During the next session they must not be labelled as the previous close.
+    """
+    now = get_market_now("cn", current_time=current_time)
     session = get_effective_trading_date("cn", current_time=now)
-    return session, session == now.date() and now.hour >= 15
+    next_session = get_next_trading_date("cn", session)
+    if next_session is None:
+        return session, False
+    next_auction = datetime.combine(next_session, time(9, 15), tzinfo=now.tzinfo)
+    return session, now < next_auction
 
 
 def get_sector_overview(data_dir: Path, *, refresh: bool = False) -> dict:
-    session, after_close = _market_session()
+    session, after_close = closing_quote_session()
     with ThreadPoolExecutor(max_workers=2) as pool:
         tasks = {
             category: pool.submit(
@@ -166,7 +179,7 @@ def get_sector_detail(data_dir: Path, category: SectorCategory, sector_id: str) 
 
     if not _SECTOR_ID.fullmatch(sector_id):
         return None
-    session, after_close = _market_session()
+    session, after_close = closing_quote_session()
     group = get_sector_group(data_dir, category, session, after_close=after_close)
     if group is None or not any(row["id"] == sector_id for row in group["rows"]):
         return None
@@ -177,6 +190,6 @@ def get_sector_detail(data_dir: Path, category: SectorCategory, sector_id: str) 
         else:
             fetch = ak.stock_board_industry_cons_em if category == "industry" else ak.stock_board_concept_cons_em
             frame = _fetch(fetch, symbol=sector_id)
-        if frame is not None:
+        if frame is not None and closing_quote_session() == (session, True):
             members = summarize_members(frame, group["source"])
     return {"trade_date": session.isoformat(), "source": group["source"], "members": members}

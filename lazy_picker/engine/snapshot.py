@@ -22,6 +22,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from .source_guard import call_with_timeout, parse_source_timeout_seconds
+from .trading_calendar import MarketPhase, build_market_phase_context, get_effective_trading_date
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ def fetch_snapshot_with_fallback(
     fallback_max_age_hours: float | None = None,
     cache_ttl_seconds: float = 0.0,
     market: str = "cn",
+    expected_trade_date: date | None = None,
 ) -> pd.DataFrame:
     """Try live sources, optionally falling back to the last-good snapshot."""
     if market == "us":
@@ -87,7 +89,10 @@ def fetch_snapshot_with_fallback(
             requested_snapshot_sources=sources,
         )
         if cached is not None:
-            return cached
+            try:
+                return validate_snapshot_date(cached, expected_trade_date)
+            except ValueError as exc:
+                errors.append(f"cache: {exc}")
 
     for source in sources:
         disabled_reason = _source_disabled_reason(source)
@@ -97,6 +102,7 @@ def fetch_snapshot_with_fallback(
         try:
             df = fetch_cn_snapshot(source)
             if not df.empty:
+                df = validate_snapshot_date(df, expected_trade_date)
                 missing = _missing_required_columns(df, required)
                 if missing:
                     error = f"missing required columns {','.join(missing)}"
@@ -130,9 +136,45 @@ def fetch_snapshot_with_fallback(
         max_age_hours=fallback_max_age_hours,
     )
     if cached is not None:
-        return cached
+        try:
+            return validate_snapshot_date(cached, expected_trade_date)
+        except ValueError as exc:
+            errors.append(f"cache: {exc}")
 
     raise RuntimeError(f"All snapshot sources failed: {'; '.join(errors)}")
+
+
+def expected_quote_date(current_time: datetime | None = None) -> date:
+    context = build_market_phase_context(market="cn", current_time=current_time)
+    if context.phase == MarketPhase.UNKNOWN:
+        raise RuntimeError("无法确认交易日历")
+    now = context.market_local_time
+    if context.is_trading_day and (now.hour, now.minute) >= (9, 15):
+        return context.session_date
+    return context.effective_daily_bar_date
+
+
+def validate_snapshot_date(df: pd.DataFrame, expected: date | None) -> pd.DataFrame:
+    """Check provider quote dates, independently of when a response was fetched."""
+    if expected is None:
+        return df
+    captured_at = df.attrs.get("last_good_created_at")
+    if captured_at:
+        captured_close = get_effective_trading_date("cn", current_time=datetime.fromisoformat(captured_at))
+        latest_close = get_effective_trading_date("cn")
+        if captured_close < latest_close:
+            raise ValueError("缓存早于最近一次收盘，需要重新获取")
+    field = next((key for key in ("quote_date", "MAX_TRADE_DATE", "trade_date", "最新交易日") if key in df), None)
+    if field is None:
+        raise ValueError("行情源未提供可核验的交易日期")
+    dates = pd.to_datetime(df[field].astype(str), errors="coerce", format="mixed").dt.date
+    current = df.loc[dates.eq(expected)].copy()
+    if current.empty:
+        latest = dates.dropna().max() if dates.notna().any() else "未知"
+        raise ValueError(f"行情日期 {latest}，需要 {expected}")
+    current["quote_date"] = expected.isoformat()
+    current.attrs["quote_trade_date"] = expected.isoformat()
+    return current
 
 
 def _fetch_us_snapshot_with_fallback(

@@ -9,3 +9,4 @@ python-dotenv>=1,<2
 PyYAML>=6,<7
 requests>=2.32,<3
 uvicorn>=0.34,<1
+vercel-blob==0.6.0

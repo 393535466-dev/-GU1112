@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "fastapi",
+  "regions": ["hkg1"],
+  "functions": {
+    "lazy_picker/app.py": {
+      "maxDuration": 300,
+      "excludeFiles": "{tests/**,data/**,logs/**,dist/**,.github/**}"
+    }
+  }
+}

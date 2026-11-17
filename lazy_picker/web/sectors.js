@@ -22,7 +22,7 @@ let page = 0;
 let detailVersion = 0;
 
 async function request(path) {
-  const response = await fetch(path, { cache: 'no-store', signal: AbortSignal.timeout(20000) });
+  const response = await fetch(path, { cache: 'no-store', signal: AbortSignal.timeout(90000) });
   if (!response.ok) throw new Error('板块行情暂不可用，请稍后重试。');
   return response.json();
 }

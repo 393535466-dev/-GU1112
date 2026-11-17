@@ -169,13 +169,23 @@ function render(data) {
     return button;
   }));
   const sectors = data.sectors;
-  byId('sector-source').textContent = sectors?.source ?? '';
+  byId('sector-source').textContent = sectors ? [
+    sectors.source,
+    (sectors.trade_date ?? data.trade_date) + ' 收盘',
+    sectors.industry_count ? sectors.industry_count + ' 个行业' : '',
+  ].filter(Boolean).join(' · ') : '';
   showSectors(byId('leaders'), sectors?.leaders ?? [], sectors ? '本日无上涨行业' : '暂无同日行业数据');
   showSectors(byId('laggards'), sectors?.laggards ?? [], sectors ? '本日无下跌行业' : '暂无同日行业数据');
   reportPanel.hidden = false;
   showIndex(currentIndex()?.code ?? data.indices[0].code);
   const messages = [];
   if (data.refresh_failed) messages.push('更新失败，显示上次取得的同日数据。');
+  if (data.reused_sections?.length) {
+    const names = { breadth: '市场涨跌', limits: '涨跌停统计', sectors: '行业榜单' };
+    messages.push(data.reused_sections.map((name) => names[name]).join('、') + '沿用同一交易日已保存的数据。');
+  }
+  if (!sectors) messages.push('行业榜单暂缺，可点「更新数据」重试。');
+  else if (sectors.refresh_failed) messages.push('行业行情更新暂不可用，显示同日已保存的榜单。');
   if (!breadth || !data.limits || data.missing_indices.length) messages.push('部分盘面数据暂缺，评分按可用行情计算。');
   setStatus(messages.join(' '));
 }
@@ -189,7 +199,7 @@ async function loadMarket(force = false) {
       return;
     }
     const response = await fetch('/api/market' + (force ? '?refresh=true' : ''), {
-      cache: 'no-store', signal: AbortSignal.timeout(35000),
+      cache: 'no-store', signal: AbortSignal.timeout(90000),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || '收盘行情暂不可用。');

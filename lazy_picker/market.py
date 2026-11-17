@@ -13,9 +13,9 @@ import pandas as pd
 from .engine.daily import _fetch_daily_sina, _fetch_daily_tencent
 from .engine.source_guard import call_with_timeout
 from .engine.snapshot import fetch_snapshot_with_fallback
-from .engine.trading_calendar import get_effective_trading_date, get_market_now
+from .engine.trading_calendar import get_market_now
 from .picker import SNAPSHOT_SOURCES, SOURCE_NAMES
-from .sectors import get_sector_group
+from .sectors import closing_quote_session, get_sector_group
 
 logger = logging.getLogger(__name__)
 INDICES = {
@@ -115,6 +115,7 @@ def _breadth(data_dir: Path) -> dict | None:
         fallback_snapshot_path=data_dir / "review_snapshot.json",
         fallback_max_age_hours=.05,
         cache_ttl_seconds=120,
+        expected_trade_date=closing_quote_session()[0],
         timeout=19,
     )
     if frame is None or frame.attrs.get("stale"):
@@ -141,6 +142,9 @@ def _sectors(data_dir: Path, session: date, after_close: bool, refresh: bool) ->
     rows = group["rows"]
     return {
         "source": group["source"],
+        "trade_date": group["trade_date"],
+        "industry_count": len(rows),
+        "refresh_failed": bool(group.get("refresh_failed")),
         "leaders": [row for row in rows if row["change_pct"] > 0][:3],
         "laggards": [row for row in reversed(rows) if row["change_pct"] < 0][:3],
     }
@@ -166,6 +170,9 @@ def _build_report(data_dir: Path, session: date, *, after_close: bool, refresh: 
         limits = {"up": up, "down": down} if up is not None and down is not None else None
         breadth = breadth_task.result() if breadth_task else None
         sectors = sector_task.result()
+
+    if after_close and closing_quote_session() != (session, True):
+        breadth = None
 
     if not indices:
         raise MarketUnavailable("暂时没有取得最近交易日的指数收盘数据，请稍后重试。")
@@ -194,8 +201,7 @@ def _read_report(path: Path, session: date) -> dict | None:
 
 def get_market_report(data_dir: Path, *, refresh: bool = False) -> dict:
     now = get_market_now("cn")
-    session = get_effective_trading_date("cn", current_time=now)
-    after_close = session == now.date() and now.hour >= 15
+    session, after_close = closing_quote_session(now)
     path = data_dir / "market_review.json"
     with _MARKET_LOCK:
         cached = _read_report(path, session)
@@ -210,6 +216,17 @@ def get_market_report(data_dir: Path, *, refresh: bool = False) -> dict:
             if cached:
                 return {**cached, "cached": True, "refresh_failed": True}
             raise
+        # A partial refresh must not erase a previously acquired same-day close.
+        reused = []
+        if cached:
+            for field in ("breadth", "limits", "sectors"):
+                if report.get(field) is None and cached.get(field) is not None:
+                    report[field] = cached[field]
+                    reused.append(field)
+        report["reused_sections"] = reused
+        report["temperature"] = market_temperature(
+            [index["change_pct"] for index in report["indices"]], report["breadth"], report["limits"],
+        )
         pending = path.with_suffix(".tmp")
         pending.write_text(json.dumps(report, ensure_ascii=False, allow_nan=False), encoding="utf-8")
         pending.replace(path)
