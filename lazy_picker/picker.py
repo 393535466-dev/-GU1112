@@ -26,8 +26,9 @@ STRATEGY_DIR = Path(__file__).parent / "engine" / "strategies"
 SHORTLIST_LIMIT = 48
 CANDIDATE_LIMIT = 5
 SCREENING_VERSION = "2"
-SNAPSHOT_SOURCES = ["em_datacenter", "sina", "efinance", "akshare_em"]
+SNAPSHOT_SOURCES = ["tencent", "em_datacenter"]
 SOURCE_NAMES = {
+    "tencent": "腾讯财经",
     "sina": "新浪财经",
     "efinance": "东方财富（eFinance）",
     "akshare_em": "东方财富（AkShare）",
@@ -320,7 +321,8 @@ def run_screen(
             expected_trade_date=quote_date,
         )
     except RuntimeError as exc:
-        raise ScreeningDataError("暂时无法取得日期已核验的最新行情，请稍后重试。") from exc
+        logger.warning("Dated screening snapshot unavailable: %s", exc)
+        raise ScreeningDataError("暂时无法取得日期已核验的最新行情，数据源可能尚未更新或连接失败。请点击「筛选候选」重试。") from exc
     snapshot_time = snapshot.attrs.get("last_good_created_at") or utc_now()
     snapshot_source = snapshot.attrs.get("last_good_snapshot_source") or snapshot.attrs.get("snapshot_source", "")
     cached = bool(snapshot.attrs.get("cache_used") or snapshot.attrs.get("fallback_used"))

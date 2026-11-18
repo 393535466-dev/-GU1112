@@ -110,7 +110,9 @@ def _optional(fetch: Callable, *args, timeout: float, **kwargs):
 
 def _breadth(data_dir: Path) -> dict | None:
     frame = _optional(
-        fetch_snapshot_with_fallback, SNAPSHOT_SOURCES,
+        # This page asks for a completed close, including yesterday during
+        # trading hours; try the daily source before the live quote source.
+        fetch_snapshot_with_fallback, list(reversed(SNAPSHOT_SOURCES)),
         required_columns=["code", "change_pct", "amount"],
         fallback_snapshot_path=data_dir / "review_snapshot.json",
         fallback_max_age_hours=.05,

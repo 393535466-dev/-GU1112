@@ -11,8 +11,10 @@ import logging
 import json
 import os
 import random
+import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 
@@ -38,6 +40,8 @@ _EM_LAST_REQUEST_AT = 0.0
 _EM_LOCK = threading.Lock()
 _SOURCE_HEALTH: dict[str, dict[str, object]] = {}
 _SOURCE_HEALTH_LOCK = threading.Lock()
+_CN_UNIVERSE: tuple[float, list[str]] | None = None
+_CN_UNIVERSE_LOCK = threading.Lock()
 
 
 def fetch_cn_snapshot(source: str = "efinance") -> pd.DataFrame:
@@ -49,7 +53,9 @@ def fetch_cn_snapshot(source: str = "efinance") -> pd.DataFrame:
 
     Raises RuntimeError if the source is unavailable.
     """
-    if source == "sina":
+    if source == "tencent":
+        return _call_snapshot_wrapper(_fetch_tencent, source=source)
+    elif source == "sina":
         return _call_snapshot_wrapper(_fetch_sina, source=source)
     elif source == "efinance":
         return _call_snapshot_wrapper(_fetch_efinance, source=source)
@@ -172,6 +178,9 @@ def validate_snapshot_date(df: pd.DataFrame, expected: date | None) -> pd.DataFr
     if current.empty:
         latest = dates.dropna().max() if dates.notna().any() else "未知"
         raise ValueError(f"行情日期 {latest}，需要 {expected}")
+    universe_size = df.attrs.get("universe_size", 0)
+    if universe_size and len(current) < universe_size * 0.9:
+        raise ValueError(f"{expected} 已核验行情仅覆盖 {len(current)}/{universe_size}，暂不筛选")
     current["quote_date"] = expected.isoformat()
     current.attrs["quote_trade_date"] = expected.isoformat()
     return current
@@ -452,6 +461,94 @@ def _fetch_efinance() -> pd.DataFrame:
     if df is None or df.empty:
         raise RuntimeError("efinance returned empty data")
     return _normalize(df, source="efinance")
+
+
+def _cn_quote_symbols() -> list[str]:
+    """Use a daily directory for identities only, never for live prices/dates."""
+    global _CN_UNIVERSE
+    with _CN_UNIVERSE_LOCK:
+        if _CN_UNIVERSE and time.monotonic() - _CN_UNIVERSE[0] < 86400:
+            return list(_CN_UNIVERSE[1])
+        try:
+            directory = _fetch_em_datacenter()
+        except Exception:
+            directory = _fetch_sina()
+        symbols = set()
+        for value in directory["code"]:
+            code = str(value).zfill(6)
+            if not re.fullmatch(r"\d{6}", code):
+                continue
+            if code.startswith(("60", "68")):
+                symbols.add("sh" + code)
+            elif code.startswith(("00", "30")):
+                symbols.add("sz" + code)
+            elif code.startswith(("4", "8", "92")):
+                symbols.add("bj" + code)
+        if len(symbols) < 1000:
+            raise RuntimeError("A-share directory is incomplete")
+        _CN_UNIVERSE = (time.monotonic(), sorted(symbols))
+        return list(_CN_UNIVERSE[1])
+
+
+def _parse_tencent_quotes(text: str, symbols: list[str]) -> list[dict]:
+    """Read each quote's own timestamp; retrieval time is not quote time."""
+    requested = set(symbols)
+    rows = []
+    for symbol, payload in re.findall(r'v_((?:sh|sz|bj)\d{6})="([^"]*)"', text):
+        fields = payload.split("~")
+        if symbol not in requested or len(fields) < 50 or fields[2] != symbol[2:]:
+            continue
+        try:
+            stamp = datetime.strptime(fields[30], "%Y%m%d%H%M%S")
+            price = float(fields[3])
+        except (ValueError, TypeError):
+            continue
+        if price <= 0:
+            continue
+
+        def number(index: int, multiplier: float = 1) -> float:
+            try:
+                return float(fields[index]) * multiplier
+            except ValueError:
+                return float("nan")
+
+        rows.append({
+            "code": fields[2], "name": fields[1], "price": price,
+            "quote_date": stamp.date().isoformat(),
+            "quote_timestamp": stamp.isoformat() + "+08:00",
+            "change_pct": number(32), "amount": number(37, 10000),
+            "turnover_rate": number(38), "pe_ratio": number(39),
+            "circ_mv": number(44, 1e8), "total_mv": number(45, 1e8),
+            "pb_ratio": number(46), "volume_ratio": number(49),
+        })
+    return rows
+
+
+def _fetch_tencent_batch(symbols: list[str]) -> list[dict]:
+    response = requests.get(
+        "https://qt.gtimg.cn/q=" + ",".join(symbols),
+        headers={"Referer": "https://gu.qq.com/", "User-Agent": "Mozilla/5.0"},
+        timeout=10,
+    )
+    response.raise_for_status()
+    response.encoding = "gbk"
+    return _parse_tencent_quotes(response.text, symbols)
+
+
+def _fetch_tencent() -> pd.DataFrame:
+    """Bounded batches of timestamped quotes, including all scoring fields."""
+    symbols = _cn_quote_symbols()
+    batches = [symbols[i:i + 100] for i in range(0, len(symbols), 100)]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        rows = [row for batch in pool.map(_fetch_tencent_batch, batches) for row in batch]
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        raise RuntimeError("Tencent returned no dated quotes")
+    frame = frame.drop_duplicates("code")
+    if len(frame) < len(symbols) * 0.9:
+        raise RuntimeError(f"Tencent quote coverage incomplete: {len(frame)}/{len(symbols)}")
+    frame.attrs.update(snapshot_source="tencent", universe_size=len(symbols))
+    return frame
 
 
 def _fetch_akshare_em() -> pd.DataFrame:
